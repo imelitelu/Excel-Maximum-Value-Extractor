@@ -4,6 +4,7 @@ from tkinter import ttk, simpledialog
 from tkinter import filedialog, messagebox
 import time
 import sys
+import os
 
 def main():
     # Create the main window (hidden)
@@ -56,15 +57,16 @@ def main():
             target_column = target_column.strip()
             break
 
-    # Loop until the user selects a file or cancels the operation
+    # Ask the user to select multiple files
     while True:
-        # Open the file selection dialog to choose the Excel file to process
-        file_path = filedialog.askopenfilename(
-            title="請選擇要處理的 Excel 文件",
-            filetypes=[("Excel 文件", "*.xlsx")]
+        # Open the file selection dialog to choose Excel files to process
+        file_paths = filedialog.askopenfilenames(
+            title="請選擇要處理的 Excel 文件（可多選）",
+            filetypes=[("Excel 文件", "*.xlsx")],
+            parent=root
         )
 
-        if not file_path:
+        if not file_paths:
             # Ask the user whether to exit
             retry = messagebox.askretrycancel("警告", "未選擇任何文件，是否要重新選擇？")
             if retry:
@@ -74,15 +76,25 @@ def main():
                 root.destroy()
                 return  # Exit the program
         else:
-            break  # User has selected a file, exit the loop
+            break  # User has selected files, exit the loop
 
+    for file_path in file_paths:
+        try:
+            process_file(file_path, condition_column, target_column, root)
+        except Exception as e:
+            messagebox.showerror("錯誤", f"處理文件 {os.path.basename(file_path)} 時發生錯誤：\n{e}")
+
+    messagebox.showinfo("完成", "所有文件均已處理完成。")
+    root.destroy()
+    sys.exit()
+
+def process_file(file_path, condition_column, target_column, root):
     try:
         # Open the Excel file in read-only mode
         wb = pd.ExcelFile(file_path)
         sheet_names = wb.sheet_names
     except Exception as e:
-        messagebox.showerror("錯誤", f"無法讀取 Excel 文件：{e}")
-        root.destroy()
+        messagebox.showerror("錯誤", f"無法讀取 Excel 文件 {os.path.basename(file_path)}：{e}")
         return
 
     max_values_list = []
@@ -95,25 +107,29 @@ def main():
 
     # Create the progress window
     progress_window = tk.Toplevel()
-    progress_window.title("處理進度")
+    progress_window.title(f"處理進度 - {os.path.basename(file_path)}")
 
     # Flag to control loop execution
-    processing = True  # Add this variable
+    processing = True
 
     # Handle the close event
     def on_close():
-        nonlocal processing  # Declare that we want to modify the variable in the enclosing scope
+        nonlocal processing
         # Ask the user whether to exit
         if messagebox.askokcancel("退出", "正在處理，是否確定要退出？"):
-            processing = False  # Set the flag to False
+            processing = False
             progress_window.destroy()
-            root.destroy()
-            sys.exit()  # Exit the program immediately
+            # root.destroy()
+            # sys.exit()  # Do not exit the entire program, just stop processing this file
 
     progress_window.protocol("WM_DELETE_WINDOW", on_close)
 
-    progress_label = tk.Label(progress_window, text="正在處理工作表...")
+    progress_label = tk.Label(progress_window, text="正在處理文件...")
     progress_label.pack(pady=5)
+
+    # Add a label to display the current file name
+    file_label = tk.Label(progress_window, text=f"當前文件：{os.path.basename(file_path)}")
+    file_label.pack(pady=5)
 
     sheet_label = tk.Label(progress_window, text="")
     sheet_label.pack(pady=5)
@@ -192,54 +208,54 @@ def main():
 
     if missing_columns_sheets:
         missing_sheets_str = '\n'.join(missing_columns_sheets)
-        messagebox.showinfo("提示", f"以下工作表中沒有找到指定的列，已跳過：\n{missing_sheets_str}")
+        messagebox.showinfo("提示", f"文件 {os.path.basename(file_path)} 中，以下工作表沒有找到指定的列，已跳過：\n{missing_sheets_str}")
 
     if error_sheets:
         error_sheets_str = '\n'.join([f"{name}: {error}" for name, error in error_sheets])
-        messagebox.showinfo("提示", f"以下工作表處理時出錯，已跳過：\n{error_sheets_str}")
+        messagebox.showinfo("提示", f"文件 {os.path.basename(file_path)} 中，以下工作表處理時出錯，已跳過：\n{error_sheets_str}")
 
     if not max_values_list:
-        messagebox.showwarning("警告", "未能提取任何最大值，程序將退出。")
-        root.destroy()
+        messagebox.showwarning("警告", f"文件 {os.path.basename(file_path)} 未能提取任何最大值，已跳過。")
         return
 
     # Convert the list of max values to a DataFrame
     max_values_df = pd.DataFrame(max_values_list)
 
-    # Loop until the user selects a save path or cancels the operation
+    # Suggest a default save path with the same name as the original file
+    default_save_name = f"{os.path.splitext(os.path.basename(file_path))[0]}_結果.xlsx"
+    default_save_path = os.path.join(os.path.dirname(file_path), default_save_name)
+
     while processing:
         # Let the user choose the file path to save the results
         save_file_path = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
+            initialfile=default_save_name,
+            initialdir=os.path.dirname(file_path),
             filetypes=[("Excel 文件", "*.xlsx")],
-            title="請選擇保存結果的文件路徑"
+            title=f"請選擇保存結果的文件路徑 - {os.path.basename(file_path)}",
+            parent=root
         )
 
         if not save_file_path:
             # Ask the user whether to exit
-            retry = messagebox.askretrycancel("警告", "未選擇保存路徑，是否要重新選擇？")
+            retry = messagebox.askretrycancel("警告", "未選擇保存路徑，是否要重新選擇？", parent=root)
             if retry:
                 continue  # Redisplay the save dialog
             else:
-                messagebox.showinfo("退出", "程式將退出。")
-                root.destroy()
-                return  # Exit the program
+                messagebox.showinfo("退出", f"文件 {os.path.basename(file_path)} 的結果未保存。")
+                return  # Exit the function
         else:
             break  # User has selected a save path, exit the loop
 
     if not processing:
-        return  # If the user chose to exit, end the program
+        return  # If the user chose to exit, end the function
 
     try:
         # Save the results to a new Excel file
         max_values_df.to_excel(save_file_path, index=False)
-        messagebox.showinfo("完成", f"最大值已成功保存到：\n{save_file_path}")
+        messagebox.showinfo("完成", f"文件 {os.path.basename(file_path)} 的最大值已成功保存到：\n{save_file_path}")
     except Exception as e:
         messagebox.showerror("錯誤", f"無法保存 Excel 文件：{e}")
-
-    # Close the main window and exit the program
-    root.destroy()
-    sys.exit()
 
 if __name__ == "__main__":
     main()
