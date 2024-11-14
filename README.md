@@ -1,4 +1,4 @@
-# Excel Maximum Value Extractor_v3
+# Excel Maximum Value Extractor_v2.0
 A Python application to extract the maximum values from specified columns in multiple Excel files based on user-defined conditions.
 
 ## Table of Contents
